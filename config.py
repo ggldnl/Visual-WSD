@@ -18,3 +18,4 @@ ROOT_DIR = Path(__file__).parent
 # Navigate the directory structure
 DATA_DIR = ROOT_DIR / 'data'
 LOGS_DIR = ROOT_DIR / 'logs'
+CHECK_DIR = ROOT_DIR / 'checkpoints'
