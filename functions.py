@@ -9,7 +9,7 @@ def contrastive_loss(logits, dim):
 
 def clip_loss(sim):
     caption_loss = contrastive_loss(sim, dim=0)
-    image_loss = contrastive_loss(sim, dim=1)
+    image_loss = contrastive_loss(sim, dim=0)
     return (caption_loss + image_loss) / 2.0
 
 
