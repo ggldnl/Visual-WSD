@@ -17,4 +17,4 @@ ROOT_DIR = Path(__file__).parent
 
 # Navigate the directory structure
 DATA_DIR = ROOT_DIR / 'data'
-LOG_DIR = ROOT_DIR / 'logs'
+LOGS_DIR = ROOT_DIR / 'logs'
