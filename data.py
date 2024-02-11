@@ -2,6 +2,8 @@ from torch.utils.data import Dataset, DataLoader, ConcatDataset
 from torch.utils.data import random_split
 import pytorch_lightning as pl
 from PIL import Image
+
+import config
 import utils
 import csv
 import os
@@ -96,8 +98,8 @@ class VisualWSDDataModule(pl.LightningDataModule):
                  data_dir,
                  download=False,
                  train_val_split=0.8,
-                 batch_size=64,
-                 num_workers=4,
+                 batch_size=config.BATCH_SIZE,
+                 num_workers=config.NUM_WORKERS,
                  **kwargs
                  ):
 
