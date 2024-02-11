@@ -1,4 +1,4 @@
-from transformers import ViTImageProcessor, BertModel, DistilBertTokenizer, ViTModel
+from transformers import ViTImageProcessor, DistilBertModel, DistilBertTokenizer, ViTModel
 import torch.nn.functional as F
 import pytorch_lightning as pl
 import torch.nn as nn
@@ -75,11 +75,11 @@ class TextEncoder(pl.LightningModule):
 
         # Create the text transformer
         self.tokenizer = DistilBertTokenizer.from_pretrained(config.TEXT_MODEL)
-        self.text_model = BertModel.from_pretrained(config.TEXT_MODEL)
+        self.text_model = DistilBertModel.from_pretrained(config.TEXT_MODEL)
 
         # Take in and out dimensions of the last linear layer
-        last_linear_layer = self.text_model.encoder.layer[-1].output.dense
-        last_linear_layer_out = last_linear_layer.out_features
+        last_linear_layer = self.text_model.transformer.layer[-1].output_layer_norm
+        last_linear_layer_out = last_linear_layer.normalized_shape[0]
 
         # Create a projection layer using the size of the vision models output features as in dimension
         self.projection = Projection(last_linear_layer_out, config.EMBED_DIM)
