@@ -141,7 +141,7 @@ class CLIPLike(pl.LightningModule):
 
         return loss, img_acc, cap_acc
 
-    def training_step(self, batch):
+    def training_step(self, batch, batch_idx):
 
         loss, img_acc, cap_acc = self.common_step(batch)
         self.log("training_loss", loss, on_step=True)
@@ -149,7 +149,7 @@ class CLIPLike(pl.LightningModule):
         self.log("training_cap_acc", cap_acc, on_step=True, prog_bar=True)
         return loss
 
-    def validation_step(self, batch):
+    def validation_step(self, batch, batch_idx):
 
         loss, img_acc, cap_acc = self.common_step(batch)
         self.log("validation_loss", loss, on_step=True)
@@ -157,7 +157,7 @@ class CLIPLike(pl.LightningModule):
         self.log("validation_cap_acc", cap_acc, on_step=True, prog_bar=True)
         return loss
 
-    def test_step(self, batch):
+    def test_step(self, batch, batch_idx):
 
         loss, img_acc, cap_acc = self.common_step(batch)
         self.log("test_loss", loss, on_step=True)
