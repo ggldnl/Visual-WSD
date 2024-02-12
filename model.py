@@ -6,8 +6,6 @@ import functions
 import config
 import torch
 
-import utils
-
 
 class Projection(pl.LightningModule):
 
