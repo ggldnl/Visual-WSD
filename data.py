@@ -1,8 +1,6 @@
 from torch.utils.data import Dataset, DataLoader, ConcatDataset
 from torch.utils.data import random_split
 import pytorch_lightning as pl
-from PIL import Image
-
 import config
 import utils
 import csv
@@ -13,6 +11,10 @@ from torchvision import transforms as tt
 
 # Custom transforms
 import transforms as ct
+
+# Import PIL and enable image truncation
+from PIL import Image, ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 class VisualWSDDataset(Dataset):
@@ -27,10 +29,10 @@ class VisualWSDDataset(Dataset):
 
         self.data_folder = data_folder
 
-        with open(data_file, 'r') as file:
+        with open(data_file, 'r', encoding="utf-8") as file:
             self.data = [(row[0], row[1], row[2:]) for row in csv.reader(file, delimiter='\t')]
 
-        with open(gold_file, 'r') as file:
+        with open(gold_file, 'r', encoding="utf-8") as file:
             self.gold = [row[0] for row in csv.reader(file, delimiter='\t')]
 
         self.image_transform = image_transform
