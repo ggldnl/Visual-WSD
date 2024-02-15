@@ -32,8 +32,8 @@ if __name__ == '__main__':
     # Create the model
     model = CLIPLike()
 
-    # Create the trainer
-    trainer = pl.Trainer(max_epochs=config.EPOCHS)
+    # Create the trainer saving checkpoints to CHECK_DIR at every epoch
+    trainer = pl.Trainer(max_epochs=config.EPOCHS, default_root_dir=config.CHECK_DIR)
 
     # Train the model
     trainer.fit(model, data_module)
