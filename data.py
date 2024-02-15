@@ -1,8 +1,10 @@
+import pandas as pd
 from torch.utils.data import Dataset, DataLoader, ConcatDataset
-from torch.utils.data import random_split
 import pytorch_lightning as pl
+import numpy as np
 import config
 import utils
+import torch
 import csv
 import os
 
@@ -20,20 +22,12 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 class VisualWSDDataset(Dataset):
 
     def __init__(self,
-                 data_folder,
-                 data_file,
-                 gold_file,
+                 data,
                  image_transform=None,
                  caption_transform=None,
                  ):
 
-        self.data_folder = data_folder
-
-        with open(data_file, 'r', encoding="utf-8") as file:
-            self.data = [(row[0], row[1], row[2:]) for row in csv.reader(file, delimiter='\t')]
-
-        with open(gold_file, 'r', encoding="utf-8") as file:
-            self.gold = [row[0] for row in csv.reader(file, delimiter='\t')]
+        self.data = data
 
         self.image_transform = image_transform
         self.caption_transform = caption_transform
@@ -43,27 +37,25 @@ class VisualWSDDataset(Dataset):
 
     def __getitem__(self, index):
 
-        label, context, images_list = self.data[index]
-        gold = self.gold[index]
-
-        # Gold image
-        gold_image_path = os.path.join(self.data_folder, gold)
-        gold_image = Image.open(gold_image_path)
-
-        # Caption
-        caption = f'{label} {context}'
-
-        # Wrong matches
-        # images_list = [Image.open(os.path.join(self.data_folder, image_path)).convert("RGB") for image_path in
-        #                images_list]
+        caption, image_path = self.data[index]
+        image = Image.open(image_path)
 
         if self.image_transform:
-            gold_image = self.image_transform(gold_image)
+            image = self.image_transform(image)
 
         if self.caption_transform:
             caption = self.caption_transform(caption)
 
-        return gold_image, caption
+        return image, caption
+
+
+class CollateFn:
+    def __init__(self):
+        pass
+
+    def __call__(self, batch):
+        x, y = zip(*batch)
+        return torch.stack(x), list(y)
 
 
 class VisualWSDDataModule(pl.LightningDataModule):
@@ -142,6 +134,8 @@ class VisualWSDDataModule(pl.LightningDataModule):
         self.val_dataset = None
         self.test_dataset = None
 
+        self.collate_fn = CollateFn()
+
     def prepare_data(self):
 
         if self.download:
@@ -162,6 +156,75 @@ class VisualWSDDataModule(pl.LightningDataModule):
                 # Remove the zip file
                 os.remove(resource_filename)
 
+    @staticmethod
+    def get_data(images_path, data_path, gold_path):
+
+        # label, caption, list of images
+        with open(data_path, 'r', encoding="utf-8") as file:
+            data = [(row[0], row[1], row[2:]) for row in csv.reader(file, delimiter='\t')]
+
+        # gold image
+        with open(gold_path, 'r', encoding="utf-8") as file:
+            gold = [row[0] for row in csv.reader(file, delimiter='\t')]
+
+        captions = [f'{label} {context}' for label, context, _ in data]
+        gold_images = [os.path.join(images_path, gold_image) for gold_image in gold]
+
+        return np.column_stack((captions, gold_images))
+
+    def split(self, data, percentages):
+
+        if isinstance(percentages, float) and 0 < percentages < 1:
+            return self._split_two(data, [percentages, 1 - percentages])
+
+        if isinstance(percentages, list):
+
+            assert sum(percentages) == 1, f'Elements in the percentages array does not sum up to 1: {percentages}'
+
+            if len(percentages) == 2:
+                return self._split_two(data, percentages)
+            elif len(percentages) == 3:
+                return self._split_three(data, percentages)
+            else:
+                raise ValueError(f'Invalid percentages array: {percentages}')
+
+    @staticmethod
+    def _split_two(data, percentages):
+
+        # Compute the sizes of each set
+        num_samples = len(data)
+        num_train = int(percentages[0] * num_samples)
+        num_val = int(percentages[1] * num_samples)
+
+        # Shuffle the indices to randomly select samples for each set
+        indices = np.arange(num_samples)
+        np.random.shuffle(indices)
+
+        # Split the indices into training and validation
+        train_indices = indices[:num_train]
+        val_indices = indices[num_train: num_train + num_val]
+
+        return data[train_indices], data[val_indices]
+
+    @staticmethod
+    def _split_three(data, percentages):
+
+        # Compute the sizes of each set
+        num_samples = len(data)
+        num_train = int(percentages[0] * num_samples)
+        num_val = int(percentages[1] * num_samples)
+
+        # Shuffle the indices to randomly select samples for each set
+        indices = np.arange(num_samples)
+        np.random.shuffle(indices)
+
+        # Split the indices into training and validation
+        train_indices = indices[:num_train]
+        val_indices = indices[num_train: num_train + num_val]
+        test_indices = indices[num_train + num_val:]
+
+        return data[train_indices], data[val_indices], data[test_indices]
+
     def setup(self, stage=None):
 
         # Define transforms pipeline that images and captions will be subjected to
@@ -174,11 +237,17 @@ class VisualWSDDataModule(pl.LightningDataModule):
             ct.CaptionTransform()
         ])
 
-        # Define train and val datasets
-        train_dataset = VisualWSDDataset(
+        train_val_data = self.get_data(
             self.resources['train_images_path'],
             self.resources['train_data_path'],
-            self.resources['train_gold_path'],
+            self.resources['train_gold_path']
+        )
+
+        train_data, val_data = self.split(train_val_data, [self.train_val_split, 1 - self.train_val_split])
+
+        # Define train and val datasets
+        self.train_dataset = VisualWSDDataset(
+            train_data,
 
             # The images will be transformed into tensors by the preprocessor inside the model itself
             image_transform=image_transforms,
@@ -186,29 +255,46 @@ class VisualWSDDataModule(pl.LightningDataModule):
             # The captions will be transformed into tensors by the tokenizer inside the model itself
             caption_transform=caption_transforms
         )
-        self.train_dataset, self.val_dataset = random_split(train_dataset, [self.train_val_split, 1 - self.train_val_split])
 
-        # Define test dataset
-        en_test_dataset = VisualWSDDataset(
+        self.val_dataset = VisualWSDDataset(
+            val_data,
+            image_transform=image_transforms,
+            caption_transform=caption_transforms
+        )
+
+        en_test_data = self.get_data(
             self.resources['test_images_path'],
             self.resources['en_test_data_path'],
             self.resources['en_test_gold_path'],
+        )
+
+        # Define test dataset
+        en_test_dataset = VisualWSDDataset(
+            en_test_data,
             image_transform=image_transforms,
             caption_transform=caption_transforms
         )
 
-        it_test_dataset = VisualWSDDataset(
+        it_test_data = self.get_data(
             self.resources['test_images_path'],
             self.resources['it_test_data_path'],
             self.resources['it_test_gold_path'],
+        )
+
+        it_test_dataset = VisualWSDDataset(
+            it_test_data,
             image_transform=image_transforms,
             caption_transform=caption_transforms
         )
 
-        fa_test_dataset = VisualWSDDataset(
+        fa_test_data = self.get_data(
             self.resources['test_images_path'],
             self.resources['fa_test_data_path'],
             self.resources['fa_test_gold_path'],
+        )
+
+        fa_test_dataset = VisualWSDDataset(
+            fa_test_data,
             image_transform=image_transforms,
             caption_transform=caption_transforms
         )
@@ -220,20 +306,45 @@ class VisualWSDDataModule(pl.LightningDataModule):
         ])
 
     def train_dataloader(self):
-        return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers)
+        return DataLoader(
+            self.train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.num_workers,
+            collate_fn=self.collate_fn
+        )
 
     def val_dataloader(self):
-        return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)
+        return DataLoader(
+            self.val_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            collate_fn=self.collate_fn
+        )
 
     def test_dataloader(self):
-        return DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)
+        return DataLoader(
+            self.test_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            collate_fn=self.collate_fn
+        )
 
 
 if __name__ == '__main__':
 
-    root_folder = r'/home/daniel/Git/CLIP/data/'
+    root_folder = r'dataset'
     visual_wsd_datamodule = VisualWSDDataModule(root_folder)
     visual_wsd_datamodule.prepare_data()
     visual_wsd_datamodule.setup()
 
     train_loader = visual_wsd_datamodule.train_dataloader()
+
+    # Iterate through the DataLoader
+    for batch in train_loader:
+        x_batch, y_batch = batch
+        print("First column of the batch contains stacked images converted to tensors:\n", x_batch)
+        print("Second column of the batch contains stacked strings:\n", y_batch)
+        break
