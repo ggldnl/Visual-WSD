@@ -125,19 +125,9 @@ class CLIPLike(pl.LightningModule):
         text_embeds = self.caption_encoder(texts)
 
         # Compute similarity and loss
-        """
-        similarity = torch.cat([
-            image_embeds,
-            text_embeds
-        ], dim=0)
-        
-        similarity = text_embeds @ image_embeds.T
-        """
-
-        sim = functions.similarity(image_embeds, text_embeds)
+        sim = functions.similarity_matrix(image_embeds, text_embeds)
         loss = functions.clip_loss(sim)
-        # img_acc, cap_acc = functions.metrics(sim)
-        img_acc, cap_acc = 0, 0
+        img_acc, cap_acc = functions.metrics(sim)
 
         return loss, img_acc, cap_acc
 
