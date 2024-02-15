@@ -38,7 +38,7 @@ class VisualWSDDataset(Dataset):
     def __getitem__(self, index):
 
         caption, image_path = self.data[index]
-        image = Image.open(image_path)
+        image = Image.open(image_path).convert('RGB')
 
         if self.image_transform:
             image = self.image_transform(image)
