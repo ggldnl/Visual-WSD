@@ -56,8 +56,8 @@ if __name__ == '__main__':
         print(f"Training from scratch...")
         model = CLIPLike()
 
-    # trainer.fit(model, data_module)
-    # trainer.test(model, data_module)
+    trainer.fit(model, data_module)
+    trainer.test(model, data_module)
 
     """
     Inference
