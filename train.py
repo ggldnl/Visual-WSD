@@ -28,23 +28,6 @@ def find_last_checkpoint(directory):
 
 if __name__ == '__main__':
 
-    # Define paths
-    root_folder = '/home/daniel/Git/Hot-Topics-in-NLP/notebooks/homeworks/homework_4/data'
-
-    test_images_path = os.path.join(root_folder, r'test_images_resized')
-
-    en_test_gold_path = os.path.join(root_folder, r'test.data.v1.1.gold/en.test.gold.v1.1.txt')
-    en_test_data_path = os.path.join(root_folder, r'test.data.v1.1.gold/en.test.data.v1.1.txt')
-    it_test_gold_path = os.path.join(root_folder, r'test.data.v1.1.gold/it.test.gold.v1.1.txt')
-    it_test_data_path = os.path.join(root_folder, r'test.data.v1.1.gold/it.test.data.v1.1.txt')
-    fa_test_gold_path = os.path.join(root_folder, r'test.data.v1.1.gold/fa.test.gold.txt')
-    fa_test_data_path = os.path.join(root_folder, r'test.data.v1.1.gold/fa.test.data.txt')
-
-    train_images_path = os.path.join(root_folder, r'semeval-2023-task-1-V-WSD-train-v1/train_v1/train_images_v1')
-
-    train_data_path = os.path.join(root_folder, r'semeval-2023-task-1-V-WSD-train-v1/train_v1/train.data.v1.txt')
-    train_gold_path = os.path.join(root_folder, r'semeval-2023-task-1-V-WSD-train-v1/train_v1/train.gold.v1.txt')
-
     # Create a datamodule
     data_module = VisualWSDDataModule('dataset', download=False)
     # data_module.prepare_data()
@@ -73,7 +56,92 @@ if __name__ == '__main__':
         print(f"Training from scratch...")
         model = CLIPLike()
 
-    trainer.fit(model, data_module)
-    trainer.test(model, data_module)
+    # trainer.fit(model, data_module)
+    # trainer.test(model, data_module)
 
+    """
+    Inference
+    """
 
+    from PIL import Image
+    from tqdm import tqdm
+    import csv
+
+    class CustomDatasetLookalike:
+        """
+        This class mimics a torch Dataset
+        """
+
+        def __init__(self,
+                     data_folder,
+                     data_file,
+                     gold_file
+                     ):
+            self.data_folder = data_folder
+
+            with open(data_file, 'r', encoding="utf-8") as file:
+                self.data = [(row[0], row[1], row[2:]) for row in csv.reader(file, delimiter='\t')]
+
+            with open(gold_file, 'r', encoding="utf-8") as file:
+                self.gold = [row[0] for row in csv.reader(file, delimiter='\t')]
+
+        def __len__(self):
+            return len(self.data)
+
+        def __getitem__(self, index):
+            label, context, images_names = self.data[index]
+            gold_image_name = self.gold[index]
+
+            # Gold image
+            gold_image_path = os.path.join(self.data_folder, gold_image_name)
+            gold_image = Image.open(gold_image_path).convert("RGB")
+
+            # Wrong matches
+            images_list = [Image.open(os.path.join(self.data_folder, image_name)).convert("RGB") for image_name in
+                           images_names]
+
+            return {
+                'gold_image': gold_image,
+                'gold_image_name': gold_image_name,
+                'context': context,
+                'label': label,
+                'images_list': images_list,
+                'images_names': images_names
+            }
+
+    # Define paths
+    root_folder = 'dataset'
+
+    test_images_path = os.path.join(root_folder, r'test_images_resized')
+    en_test_gold_path = os.path.join(root_folder, r'en.test.gold.v1.1.txt')
+    en_test_data_path = os.path.join(root_folder, r'en.test.data.v1.1.txt')
+    it_test_gold_path = os.path.join(root_folder, r'it.test.gold.v1.1.txt')
+    it_test_data_path = os.path.join(root_folder, r'it.test.data.v1.1.txt')
+    fa_test_gold_path = os.path.join(root_folder, r'fa.test.gold.txt')
+    fa_test_data_path = os.path.join(root_folder, r'fa.test.data.txt')
+
+    en_test_dataset = CustomDatasetLookalike(
+        test_images_path,
+        en_test_data_path,
+        en_test_gold_path
+    )
+
+    predictions = []
+    targets = []
+    for elem in tqdm(en_test_dataset):
+
+        images_list = elem['images_list']
+        images_names = elem['images_names']
+        context = elem['context']
+        gold_image_name = elem['gold_image_name']
+
+        targets.append(gold_image_name)
+
+        top_prediction = model.top_k_images(context, images_list, image_paths=images_names)[0]
+
+        predictions.append(top_prediction)
+
+    corrects = sum(x == y for x, y in zip(targets, predictions))
+    accuracy = corrects * 100.0 / len(targets)
+
+    print(f'Predicted {corrects}/{len(targets)}\nAccuracy: {accuracy}')
