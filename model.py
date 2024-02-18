@@ -1,7 +1,9 @@
 from transformers import ViTImageProcessor, DistilBertModel, DistilBertTokenizer, ViTModel
+from torchvision import transforms as tt
 import torch.nn.functional as F
 import pytorch_lightning as pl
 import torch.nn as nn
+import numpy as np
 import functions
 import config
 import torch
@@ -127,38 +129,96 @@ class CLIPLike(pl.LightningModule):
         # Compute similarity and loss
         sim = functions.similarity_matrix(image_embeds, text_embeds)
         loss = functions.clip_loss(sim)
-        img_acc, cap_acc = functions.metrics(sim)
+        img_acc, cap_acc = functions.clip_metrics(sim)
 
         return loss, img_acc, cap_acc
 
     def training_step(self, batch, batch_idx):
 
         loss, img_acc, cap_acc = self.common_step(batch)
-        self.log("training_loss", loss, on_step=True)
-        self.log("training_img_acc", img_acc, on_step=True, prog_bar=True)
-        self.log("training_cap_acc", cap_acc, on_step=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
 
         loss, img_acc, cap_acc = self.common_step(batch)
-        self.log("validation_loss", loss, on_step=True)
-        self.log("validation_img_acc", img_acc, on_step=True, prog_bar=True)
-        self.log("validation_cap_acc", cap_acc, on_step=True, prog_bar=True)
+        self.log("validation_loss", loss)
+        self.log("validation_img_acc", img_acc, prog_bar=True)
+        self.log("validation_cap_acc", cap_acc, prog_bar=True)
         return loss
 
     def test_step(self, batch, batch_idx):
 
         loss, img_acc, cap_acc = self.common_step(batch)
-        self.log("test_loss", loss, on_step=True)
-        self.log("test_img_acc", img_acc, on_step=True, prog_bar=True)
-        self.log("test_cap_acc", cap_acc, on_step=True, prog_bar=True)
+        self.log("test_loss", loss)
+        self.log("test_img_acc", img_acc, prog_bar=True)
+        self.log("test_cap_acc", cap_acc, prog_bar=True)
         return loss
 
     def configure_optimizers(self):
-        vision_params = {"params": self.vision_encoder.projection.parameters(), "lr": self.lr}
-        caption_params = {"params": self.caption_encoder.projection.parameters(), "lr": self.lr}
-        return torch.optim.Adam([vision_params, caption_params])
+        # vision_params = {"params": self.vision_encoder.projection.parameters(), "lr": self.lr}
+        # caption_params = {"params": self.caption_encoder.projection.parameters(), "lr": self.lr}
+        # Specify parameters to optimize
+
+        trainable_parameters = list(self.caption_encoder.projection.parameters()) + \
+                               list(self.vision_encoder.projection.parameters())
+
+        # Define optimizer (e.g., Adam optimizer)
+        optimizer = torch.optim.Adam(trainable_parameters, lr=self.lr)
+
+        return optimizer
+
+    def top_k_images(self, sentence, images, k=1, image_paths=None):
+        """
+        Returns the k most similar images to the sentence among the provided ones.
+        If the image_paths are provided, the method will automatically return the
+        paths of the k most similar images instead of the images themselves.
+        """
+
+        assert len(images) > k, f"Can't return {k} image(s) if {len(images)} provided"
+
+        image_transform = tt.Compose([
+            tt.Resize((255, 255)),
+            tt.ToTensor()
+        ])
+        images_tensors = [image_transform(image) for image in images]
+
+        # Create the embeddings
+        image_embeds = self.vision_encoder(images_tensors)
+        sentence_embed = self.caption_encoder(sentence)
+
+        similarities = [functions.cosine_similarity(sentence_embed, image_embed).item() for image_embed in image_embeds]
+
+        # Get indices of top k images
+        top_k_indices = np.argsort(similarities)[-k:][::-1]
+
+        if image_paths is None:
+
+            # Return the images
+            return [images[i] for i in top_k_indices]
+
+        # Return their paths instead
+        return [image_paths[i] for i in top_k_indices]
+
+    def top_k_texts(self, image, sentences, k=1):
+        """
+        Returns the k most similar sentences to the image among the provided ones.
+        """
+
+        assert len(sentences) > k, f"Can't return {k} sentences(s) if {len(sentences)} provided"
+
+        # Create the embeddings
+        image_embed = self.vision_encoder(image)
+        sentence_embeds = self.caption_encoder(sentences)
+
+        similarities = [functions.cosine_similarity(sentence_embed, image_embed).item() for sentence_embed in sentence_embeds]
+
+        # Get indices of top k sentences
+        top_k_indices = np.argsort(similarities)[-k:][::-1]
+
+        # Get the actual top k sentences
+        top_k_sentences = [sentences[i] for i in top_k_indices]
+
+        return top_k_sentences
 
 
 if __name__ == '__main__':
