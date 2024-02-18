@@ -27,16 +27,6 @@ def clip_loss(sim):
     return (caption_loss + image_loss) / 2.0
 
 
-def cosine_similarity(v1, v2):
-
-    # Normalize the embeddings
-    embedding1_normalized = F.normalize(v1, p=2, dim=-1)
-    embedding2_normalized = F.normalize(v2, p=2, dim=-1)
-
-    # Compute and return cosine similarity between the two vectors
-    return F.cosine_similarity(embedding1_normalized, embedding2_normalized, dim=-1)
-
-
 def similarity_matrix(v1, v2):
     return v1 @ v2.T
 
@@ -52,6 +42,16 @@ def metrics(sim):
 
     return img_acc, cap_acc
 """
+
+
+def cosine_similarity(v1, v2):
+
+    # Normalize the embeddings
+    embedding1_normalized = F.normalize(v1, p=2, dim=-1)
+    embedding2_normalized = F.normalize(v2, p=2, dim=-1)
+
+    # Compute and return cosine similarity between the two vectors
+    return F.cosine_similarity(embedding1_normalized, embedding2_normalized, dim=-1)
 
 
 def similarity_matrix(image_embeddings, text_embeddings, temperature=0.07):
@@ -83,7 +83,7 @@ def clip_loss(sim_matrix):
     positives = torch.diag(sim_matrix).reshape(batch_size, 1)
     negatives = torch.exp(sim_matrix - torch.eye(batch_size).to(sim_matrix.device))
 
-    # Compute loss
+    # Compute Negative Log Likelihood Loss
     numerator = torch.exp(positives)
     denominator = torch.exp(positives) + torch.sum(negatives, dim=1)
     loss = -torch.mean(torch.log(numerator / denominator))

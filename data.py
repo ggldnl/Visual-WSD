@@ -1,4 +1,3 @@
-import pandas as pd
 from torch.utils.data import Dataset, DataLoader, ConcatDataset
 import pytorch_lightning as pl
 import numpy as np
@@ -230,7 +229,6 @@ class VisualWSDDataModule(pl.LightningDataModule):
         # Define transforms pipeline that images and captions will be subjected to
         image_transforms = tt.Compose([
             tt.Resize((256, 256)),
-            ct.RGBTransform(),
             tt.ToTensor()
         ])
         caption_transforms = tt.Compose([

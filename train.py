@@ -5,6 +5,27 @@ import config
 import os
 
 
+def find_last_checkpoint(directory):
+
+    # Ensure the provided path is a directory
+    if not os.path.isdir(directory):
+        print(f"Error: '{directory}' is not a valid directory.")
+        return None
+
+    # Get all files ending with '.ckpt' recursively
+    checkpoint_files = [os.path.join(root, file) for root, dirs, files in os.walk(directory) for file in files if file.endswith('.ckpt')]
+
+    # Check if any checkpoint files were found
+    if not checkpoint_files:
+        print(f"No '.ckpt' files found in '{directory}'.")
+        return None
+
+    # Select the checkpoint with the last name in alphabetical order
+    selected_checkpoint = max(checkpoint_files)
+
+    return selected_checkpoint
+
+
 if __name__ == '__main__':
 
     # Define paths
@@ -26,14 +47,33 @@ if __name__ == '__main__':
 
     # Create a datamodule
     data_module = VisualWSDDataModule('dataset', download=False)
-    data_module.prepare_data()
-    data_module.setup()
+    # data_module.prepare_data()
+    # data_module.setup()
 
-    # Create the model
-    model = CLIPLike()
+    checkpoint_callback = pl.callbacks.ModelCheckpoint(
+        filename="checkpoint_{epoch:02d}",
+        every_n_epochs=1,
+        save_top_k=-1,
+    )
 
     # Create the trainer saving checkpoints to CHECK_DIR at every epoch
-    trainer = pl.Trainer(max_epochs=config.EPOCHS, default_root_dir=config.CHECK_DIR)
+    trainer = pl.Trainer(
+        max_epochs=config.EPOCHS,
+        # default_root_dir=config.CHECK_DIR,
+        # precision=config.PRECISION,
+        # callbacks=[checkpoint_callback]
+    )
 
-    # Train the model
+    # Check if we need to restore a checkpoint or to train from scratch
+    selected_checkpoint = find_last_checkpoint(str(config.LOGS_DIR))
+    if selected_checkpoint:
+        print(f"Selected checkpoint: {selected_checkpoint}")
+        model = CLIPLike.load_from_checkpoint(selected_checkpoint)
+    else:
+        print(f"Training from scratch...")
+        model = CLIPLike()
+
     trainer.fit(model, data_module)
+    trainer.test(model, data_module)
+
+
