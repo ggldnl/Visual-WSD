@@ -81,12 +81,21 @@ def clip_loss(sim_matrix):
     # Compute positive and negative examples
     batch_size = sim_matrix.size(0)
     positives = torch.diag(sim_matrix).reshape(batch_size, 1)
-    negatives = torch.exp(sim_matrix - torch.eye(batch_size).to(sim_matrix.device))
+    negatives = torch.exp(sim_matrix - torch.eye(batch_size))
 
     # Compute Negative Log Likelihood Loss
+
+    """
     numerator = torch.exp(positives)
     denominator = torch.exp(positives) + torch.sum(negatives, dim=1)
     loss = -torch.mean(torch.log(numerator / denominator))
+    """
+
+    # Log probabilities of the positives
+    log_positives = torch.log(positives / torch.sum(negatives, dim=1, keepdim=True))
+
+    # NLL loss
+    loss = -torch.mean(log_positives)
 
     return loss
 

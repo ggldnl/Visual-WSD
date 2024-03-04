@@ -11,25 +11,35 @@ import torch
 
 class Projection(pl.LightningModule):
 
-    def __init__(self, d_in: int, d_out: int, p: float = 0.5):
+    def __init__(self, d_in, d_hidden, d_out, p=0.5):
 
         super().__init__()
 
-        self.linear1 = nn.Linear(d_in, d_out, bias=False)
-        self.linear2 = nn.Linear(d_out, d_out, bias=False)
+        self.linear1 = nn.Linear(d_in, d_hidden, bias=False)
+        self.linear2 = nn.Linear(d_hidden, d_out, bias=False)
         self.layer_norm = nn.LayerNorm(d_out)
         self.drop = nn.Dropout(p)
 
     def forward(self, x):
+        """
         embed1 = self.linear1(x)
         embed2 = self.drop(self.linear2(F.gelu(embed1)))
         embeds = self.layer_norm(embed1 + embed2)
         return embeds
+        """
+
+        x = self.linear1(x)
+        x = F.gelu(x)
+        x = self.linear2(x)
+        x = F.gelu(x)
+        x = self.drop(x)
+        x = self.layer_norm(x)
+        return x
 
 
 class VisionEncoder(pl.LightningModule):
 
-    def __init__(self):
+    def __init__(self, d_hidden, d_out):
 
         super().__init__()
 
@@ -41,8 +51,11 @@ class VisionEncoder(pl.LightningModule):
         last_linear_layer = self.vision_model.encoder.layer[-1].output.dense
         last_linear_layer_out = last_linear_layer.out_features
 
+        if d_hidden is None:
+            d_hidden = last_linear_layer_out
+
         # Create a projection layer using the size of the vision models output features as in dimension
-        self.projection = Projection(last_linear_layer_out, config.EMBED_DIM)
+        self.projection = Projection(last_linear_layer_out, d_hidden, d_out)
 
         # Freeze the vision model parameters
         for p in self.vision_model.parameters():
@@ -69,7 +82,7 @@ class VisionEncoder(pl.LightningModule):
 
 class TextEncoder(pl.LightningModule):
 
-    def __init__(self):
+    def __init__(self, d_hidden, d_out):
 
         super().__init__()
 
@@ -81,8 +94,11 @@ class TextEncoder(pl.LightningModule):
         last_linear_layer = self.text_model.transformer.layer[-1].output_layer_norm
         last_linear_layer_out = last_linear_layer.normalized_shape[0]
 
+        if d_hidden is None:
+            d_hidden = last_linear_layer_out
+
         # Create a projection layer using the size of the vision models output features as in dimension
-        self.projection = Projection(last_linear_layer_out, config.EMBED_DIM)
+        self.projection = Projection(last_linear_layer_out, d_hidden, d_out)
 
         # Freeze the text model parameters
         for p in self.text_model.parameters():
@@ -109,13 +125,18 @@ class TextEncoder(pl.LightningModule):
 
 class CLIPLike(pl.LightningModule):
 
-    def __init__(self):
+    def __init__(self,
+                 img_proj_hidden_size=None,
+                 text_proj_hidden_size=None,
+                 embed_dim=config.EMBED_DIM,
+                 lr=config.LEARNING_RATE
+                 ):
 
         super().__init__()
 
-        self.vision_encoder = VisionEncoder()
-        self.caption_encoder = TextEncoder()
-        self.lr = config.LEARNING_RATE
+        self.vision_encoder = VisionEncoder(img_proj_hidden_size, embed_dim)
+        self.caption_encoder = TextEncoder(text_proj_hidden_size, embed_dim)
+        self.lr = lr
 
     def common_step(self, batch):
 
@@ -223,15 +244,16 @@ class CLIPLike(pl.LightningModule):
 
 if __name__ == '__main__':
 
-    """
-    ve = VisionEncoder()
+    import utils
+    ve = VisionEncoder(None, config.EMBED_DIM)
     dog_img_path = r"https://unsplash.com/photos/QtxgNsmJQSs/download?ixid=MnwxMjA3fDB8MXxhbGx8fHx8fHx8fHwxNjM1ODQ0MjY3&w=640"
     img = utils.load_image(dog_img_path)
     vision_embeds = ve(img)
     print(vision_embeds)
-    """
 
-    te = TextEncoder()
+    """
+    te = TextEncoder(None, config.EMBED_DIM)
     text = "Hello world"
     text_embeds = te(text)
     print(text_embeds)
+    """
